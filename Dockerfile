@@ -30,4 +30,5 @@ WORKDIR /app
 # Get compiled binaries from builder's cargo install directory
 COPY --from=builder /usr/local/cargo/bin/protohackers /app/protohackers
 
-# No CMD or ENTRYPOINT, see fly.toml with `cmd` override.
+EXPOSE 7878
+CMD "./protohackers"
