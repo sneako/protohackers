@@ -19,22 +19,13 @@ struct PrimeResponse {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    // echo server
     let listener = TcpListener::bind("0.0.0.0:7878").await?;
 
     loop {
         let (stream, _address) = listener.accept().await?;
-        // tokio::spawn(async move { echo(stream) });
-        // tokio::spawn(async move { rpc_server(stream) });
         tokio::spawn(async move { rpc_server(stream) });
     }
 }
-
-// async fn echo(mut stream: TcpStream) -> io::Result<()> {
-//     let (mut reader, mut writer) = stream.split();
-//     copy(&mut reader, &mut writer).await?;
-//     io::Result::Ok(())
-// }
 
 async fn rpc_server(stream: TcpStream) -> io::Result<()> {
     let mut reader = BufReader::new(stream);
