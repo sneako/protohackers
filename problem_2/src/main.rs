@@ -7,7 +7,7 @@ async fn main() -> io::Result<()> {
 
     loop {
         let (stream, _address) = listener.accept().await?;
-        tokio::spawn(async move { handle_stream(stream) });
+        tokio::spawn(async move { handle_stream(stream).await });
     }
 }
 
