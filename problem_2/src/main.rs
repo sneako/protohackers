@@ -60,15 +60,15 @@ async fn handle_stream(mut stream: TcpStream) -> io::Result<()> {
                 if mintime > maxtime {
                     writer.write_i32(0).await?;
                 } else {
-                    let mut count: i32 = 0;
-                    let mut sum: i32 = 0;
+                    let mut count: i64 = 0;
+                    let mut sum: i64 = 0;
                     for (_timestamp, &amount) in db.range((Included(mintime), Included(maxtime))) {
                         count = count + 1;
-                        sum = sum + amount;
+                        sum = sum + amount as i64;
                     }
                     let mean = if count > 0 { sum / count } else { 0 };
                     info!("query result: sum {}, count {}, mean {}", sum, count, mean);
-                    writer.write(&mean.to_be_bytes()).await?;
+                    writer.write_i32(mean as i32).await?;
                 }
                 ()
             }

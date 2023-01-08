@@ -1,5 +1,5 @@
-# address = '137.66.59.170'
-address = 'localhost'
+address = '137.66.59.170'
+# address = 'localhost'
 {:ok, socket} = :gen_tcp.connect(address, 7878, mode: :binary, active: false)
 
 # query
