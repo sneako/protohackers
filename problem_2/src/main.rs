@@ -41,9 +41,10 @@ impl Message {
     }
 }
 
-async fn handle_stream(stream: TcpStream) -> io::Result<()> {
+async fn handle_stream(mut stream: TcpStream) -> io::Result<()> {
     let mut db: BTreeMap<i32, i32> = BTreeMap::new();
-    let mut reader = BufReader::new(stream);
+    let (read_half, mut writer) = stream.split();
+    let mut reader = BufReader::new(read_half);
     let mut message_bytes: [u8; 9] = [0; 9];
     while let Ok(_num_bytes) = reader.read_exact(&mut message_bytes).await {
         match Message::cast(message_bytes) {
@@ -54,15 +55,19 @@ async fn handle_stream(stream: TcpStream) -> io::Result<()> {
             }
             Message::Query { mintime, maxtime } => {
                 println!("{:?} - query {} to {}", message_bytes, mintime, maxtime);
-                let mut count: i32 = 0;
-                let mut sum: i32 = 0;
-                for (_timestamp, &amount) in db.range((Included(mintime), Included(maxtime))) {
-                    count = count + 1;
-                    sum = sum + amount;
+                if mintime > maxtime {
+                    writer.write_i32(0).await?;
+                } else {
+                    let mut count: i32 = 0;
+                    let mut sum: i32 = 0;
+                    for (_timestamp, &amount) in db.range((Included(mintime), Included(maxtime))) {
+                        count = count + 1;
+                        sum = sum + amount;
+                    }
+                    let mean = if count > 0 { sum / count } else { 0 };
+                    println!("query result: sum {}, count {}, mean {}", sum, count, mean);
+                    writer.write(&mean.to_be_bytes()).await?;
                 }
-                let mean = if count > 0 { sum / count } else { 0 };
-                println!("query result: sum {}, count {}, mean {}", sum, count, mean);
-                reader.write(&mean.to_be_bytes()).await?;
                 ()
             }
             Message::Invalid => {
