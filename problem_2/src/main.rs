@@ -1,3 +1,4 @@
+use log::info;
 use std::collections::BTreeMap;
 use std::io;
 use std::ops::Bound::Included;
@@ -6,11 +7,12 @@ use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    env_logger::init();
     let listener = TcpListener::bind("0.0.0.0:7878").await?;
 
     loop {
         let (stream, _address) = listener.accept().await?;
-        println!("accept");
+        info!("accept");
         tokio::spawn(async move { handle_stream(stream).await });
     }
 }
@@ -49,12 +51,12 @@ async fn handle_stream(mut stream: TcpStream) -> io::Result<()> {
     while let Ok(_num_bytes) = reader.read_exact(&mut message_bytes).await {
         match Message::cast(message_bytes) {
             Message::Insert { price, timestamp } => {
-                println!("{:?} - insert {} @ {}", message_bytes, price, timestamp);
+                info!("{:?} - insert {} @ {}", message_bytes, price, timestamp);
                 db.insert(timestamp, price);
                 ()
             }
             Message::Query { mintime, maxtime } => {
-                println!("{:?} - query {} to {}", message_bytes, mintime, maxtime);
+                info!("{:?} - query {} to {}", message_bytes, mintime, maxtime);
                 if mintime > maxtime {
                     writer.write_i32(0).await?;
                 } else {
@@ -65,18 +67,18 @@ async fn handle_stream(mut stream: TcpStream) -> io::Result<()> {
                         sum = sum + amount;
                     }
                     let mean = if count > 0 { sum / count } else { 0 };
-                    println!("query result: sum {}, count {}, mean {}", sum, count, mean);
+                    info!("query result: sum {}, count {}, mean {}", sum, count, mean);
                     writer.write(&mean.to_be_bytes()).await?;
                 }
                 ()
             }
             Message::Invalid => {
-                println!("got invalid message: {:?}", message_bytes);
+                info!("got invalid message: {:?}", message_bytes);
                 message_bytes = [0; 9];
                 ()
             }
         };
-        println!("");
+        info!("");
     }
 
     io::Result::Ok(())
