@@ -1,0 +1,32 @@
+# fly.toml file generated for sneako-protohackers on 2023-01-03T10:27:48+01:00
+
+app = "sneako-protohackers"
+kill_signal = "SIGINT"
+kill_timeout = 5
+processes = []
+
+[env]
+
+[experimental]
+  allowed_public_ports = []
+  auto_rollback = true
+
+[[services]]
+  internal_port = 7878
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    handlers = []
+    port = "7878"
+
+  [[services.tcp_checks]]
+    grace_period = "1s"
+    interval = "15s"
+    restart_limit = 0
+    timeout = "2s"
