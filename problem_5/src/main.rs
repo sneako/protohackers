@@ -1,12 +1,10 @@
-use futures::sink::SinkExt;
-use futures::StreamExt;
 use log::{error, info};
 use std::io;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_util::codec::{Framed, LinesCodec};
+// use tokio::net::tcp::{ReadHalf, WriteHalf};
 
 const UPSTREAM: &str = "chat.protohackers.com:16963";
-const MAX_LENGTH: usize = 1024;
 // static TONY_ADDR: &str = "7YWHMfk9JZe0LM0g1ZauHuiSxhI";
 
 #[tokio::main]
@@ -21,71 +19,104 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn handle_stream(stream: TcpStream) -> io::Result<()> {
-    let upstream_stream = TcpStream::connect(UPSTREAM).await?;
-    let mut upstream = Framed::new(upstream_stream, LinesCodec::new_with_max_length(MAX_LENGTH));
-    let mut downstream = Framed::new(stream, LinesCodec::new_with_max_length(MAX_LENGTH));
-
+async fn handle_stream(mut downstream: TcpStream) -> io::Result<()> {
+    let (mut downstream_rx, mut downstream_tx) = downstream.split();
+    let mut upstream = TcpStream::connect(UPSTREAM).await?;
+    let (mut upstream_rx, mut upstream_tx) = upstream.split();
+    let mut upstream_buf: Vec<u8> = vec![0; 4096];
+    let mut downstream_buf: Vec<u8> = vec![0; 4096];
+    //
     // proxy the welcome message from the upstream
-    match upstream.next().await {
-        Some(Ok(welcome)) => {
-            downstream.send(welcome).await.unwrap();
-            ()
+    match upstream_rx.read(&mut upstream_buf).await {
+        Ok(num_bytes) => {
+            info!("upstream -> downstream: welcome msg, {} bytes", num_bytes);
+            downstream_tx
+                .write_all(&mut upstream_buf[..num_bytes])
+                .await?;
+            info!("sent welcome")
+        }
+        error => error!("failed to read welcome message: {:?}", error),
+    }
+
+    // proxy the name
+    match downstream_rx.read(&mut downstream_buf).await {
+        Ok(num_bytes) => {
+            info!("downstream -> upstream: name, {} bytes", num_bytes);
+            upstream_tx
+                .write_all(&mut downstream_buf[..num_bytes])
+                .await?;
+            info!("sent name");
         }
         _ => {
-            error!("failed reading welcome message!");
+            error!("failed reading the name!");
         }
     }
 
-    // proxy the "room contains" message
-    match upstream.next().await {
-        Some(Ok(room_contains_msg)) => {
-            downstream.send(room_contains_msg).await.unwrap();
-            ()
+    // proxy the room contains message
+    match upstream_rx.read(&mut upstream_buf).await {
+        Ok(num_bytes) => {
+            info!(
+                "upstream -> downstream: room contains msg, {} bytes",
+                num_bytes
+            );
+            downstream_tx
+                .write_all(&mut upstream_buf[..num_bytes])
+                .await?;
+            info!("sent room contains")
         }
-        _ => {
-            error!("failed reading the room contains message!");
-        }
+        error => error!("failed reading room contains message: {:?}", error),
     }
 
     // chat loop
     loop {
-        // read line by line from the downstream
-        match downstream.next().await {
-            Some(Ok(mut input)) => {
-                info!("received {} from downstream, proxying!", input);
+        info!("looop");
+        tokio::select! {
+            // listen for downstream
+            Ok(num_bytes) = downstream_rx.read(&mut downstream_buf) => {
+                info!("upstream <- downstream: message {} bytes", num_bytes);
                 // proxy the line upstream
-                upstream.send(&mut input).await.unwrap();
-                // read everything the upstream has sent
-                match upstream.next().await {
-                    Some(Ok(msg)) => {
-                        // send everything the upstream sent to the downstream
-                        // downstream.send_all(&mut upstream_buffer[..read_bytes]);
-                        downstream.send(msg).await.unwrap();
-                        ()
-                    }
-                    _ => {
-                        error!("failed reading from upstream");
-                        ()
-                    }
-                }
-                ()
+                upstream_tx
+                    .write_all(&mut downstream_buf[..num_bytes])
+                    .await?;
             }
-
-            _ => {
-                error!("failed reading from downstream!");
-                break;
+            // listen for upstream
+            Ok(num_bytes) = upstream_rx.read(&mut upstream_buf) => {
+                if num_bytes == 0 {
+                    break;
+                }
+                info!("upstream -> downstream: replies, {} bytes", num_bytes);
+                // send everything the upstream sent to the downstream
+                // downstream.send_all(&mut upstream_buffer[..read_bytes]);
+                downstream_tx
+                    .write_all(&mut upstream_buf[..num_bytes])
+                    .await?;
+                ()
             }
         }
     }
-
-    // fn process_replies(buffer: Vec<u8>) -> &[u8] {
-    //     buffer.
-    // }
-
     io::Result::Ok(())
 }
 
+// async fn proxy_message(
+//     mut from: ReadHalf<'_>,
+//     mut to: WriteHalf<'_>,
+//     mut buffer: Vec<u8>,
+// ) -> io::Result<()> {
+//     match from.read(&mut buffer).await {
+//         Ok(num_bytes) => {
+//             info!(
+//                 "{:?} -> {:?}: welcome msg, {} bytes",
+//                 from.peer_addr(),
+//                 to.peer_addr(),
+//                 num_bytes
+//             );
+//             to.write_all(&mut buffer[..num_bytes]).await?;
+//             info!("sent welcome")
+//         }
+//         error => error!("failed to read welcome message: {:?}", error),
+//     }
+//     io::Result::Ok(())
+// }
 // fn username_valid(input: &String) -> bool {
 //     let mut all_alphanumeric = true;
 //     let mut any_alphabetic = false;
