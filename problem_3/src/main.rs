@@ -48,7 +48,7 @@ impl State {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let listener = TcpListener::bind("0.0.0.0:7878").await?;
+    let listener = TcpListener::bind("0.0.0.0:7879").await?;
     let state: Arc<Mutex<State>> = Arc::new(Mutex::new(State::new()));
 
     loop {
