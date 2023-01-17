@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use log::{error, info};
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
 const UPSTREAM: &str = "chat.protohackers.com:16963";
@@ -29,48 +30,11 @@ async fn handle_stream(mut downstream: TcpStream) -> io::Result<()> {
     let mut downstream_buf: Vec<u8> = vec![0; 4096];
 
     // proxy the welcome message from the upstream
-    match upstream_rx.read(&mut upstream_buf).await {
-        Ok(num_bytes) => {
-            info!("welcome");
-            info!("upstream -> downstream: welcome msg, {} bytes", num_bytes);
-            downstream_tx
-                .write_all(&mut upstream_buf[..num_bytes])
-                .await?
-        }
-        error => error!("failed to read welcome message: {:?}", error),
-    }
-
+    proxy_message(&mut upstream_rx, &mut downstream_tx, &mut upstream_buf).await?;
     // proxy the name
-    match downstream_rx.read(&mut downstream_buf).await {
-        Ok(num_bytes) => {
-            if num_bytes > 0 {
-                info!("downstream -> upstream: name, {} bytes", num_bytes);
-                upstream_tx
-                    .write_all(&mut downstream_buf[..num_bytes])
-                    .await?
-            }
-        }
-        _ => {
-            error!("failed reading the name!");
-        }
-    }
-
+    proxy_message(&mut downstream_rx, &mut upstream_tx, &mut downstream_buf).await?;
     // proxy the room contains message
-    match upstream_rx.read(&mut upstream_buf).await {
-        Ok(num_bytes) => {
-            if num_bytes > 0 {
-                info!("joined");
-                info!(
-                    "upstream -> downstream: room contains msg, {} bytes",
-                    num_bytes
-                );
-                downstream_tx
-                    .write_all(&mut upstream_buf[..num_bytes])
-                    .await?
-            }
-        }
-        error => error!("failed reading room contains message: {:?}", error),
-    }
+    proxy_message(&mut upstream_rx, &mut downstream_tx, &mut upstream_buf).await?;
 
     let mut downstream_msg_buf: Vec<u8> = Vec::new();
     // chat loop
@@ -131,6 +95,28 @@ fn replace_coin_addrs(message: String) -> String {
             _ => response,
         },
     )
+}
+
+async fn proxy_message<'a>(
+    from: &'a mut ReadHalf<'_>,
+    to: &'a mut WriteHalf<'_>,
+    buffer: &'a mut Vec<u8>,
+) -> io::Result<()> {
+    match from.read(buffer).await {
+        Ok(num_bytes) => {
+            info!(
+                "{:?} -> {:?}: welcome msg, {} bytes",
+                from.peer_addr().unwrap(),
+                to.peer_addr().unwrap(),
+                num_bytes
+            );
+            to.write_all(&mut buffer[..num_bytes]).await?;
+            info!("sent welcome")
+        }
+        error => error!("failed to read welcome message: {:?}", error),
+    }
+
+    io::Result::Ok(())
 }
 
 #[cfg(test)]
