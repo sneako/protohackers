@@ -44,10 +44,10 @@ async fn handle_stream(mut downstream: TcpStream) -> io::Result<()> {
             Ok(num_bytes) = downstream_rx.read(&mut downstream_buf) => {
                 if num_bytes > 0 {
                     if downstream_buf[..num_bytes].contains(&b'\n') {
-                        if downstream_msg_buf.len() > 0 {
+                        if !downstream_msg_buf.is_empty() {
                             let string = String::from_utf8_lossy(&downstream_msg_buf);
                             let updated = replace_coin_addrs(string.to_string());
-                            upstream_tx.write_all(&updated.as_bytes()).await?;
+                            upstream_tx.write_all(updated.as_bytes()).await?;
                             downstream_msg_buf.clear()
                         }
                         info!("upstream <- downstream: message {} bytes", num_bytes);
@@ -100,7 +100,7 @@ fn replace_coin_addrs(message: String) -> String {
 async fn proxy_message<'a>(
     from: &'a mut ReadHalf<'_>,
     to: &'a mut WriteHalf<'_>,
-    buffer: &'a mut Vec<u8>,
+    buffer: &'a mut [u8],
 ) -> io::Result<()> {
     match from.read(buffer).await {
         Ok(num_bytes) => {
@@ -110,7 +110,7 @@ async fn proxy_message<'a>(
                 to.peer_addr().unwrap(),
                 num_bytes
             );
-            to.write_all(&mut buffer[..num_bytes]).await?;
+            to.write_all(&buffer[..num_bytes]).await?;
             info!("sent welcome")
         }
         error => error!("failed to read welcome message: {:?}", error),
